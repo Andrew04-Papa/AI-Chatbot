@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chatbot</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+
+<!-- ✅ Nút xem danh sách Q&A (ẩn sau khi bấm) -->
+<button id="toggle-qa-btn" onclick="toggleQASection(true)" class="show-btn">📋 Xem danh sách Q&A</button>
+
+<!-- ✅ Khu vực quản lý Q&A -->
+<div id="qa-wrapper" class="hidden">
+  <div class="qa-header">
+    <span class="qa-title">📋 Quản lý danh sách Q&A</span>
+    <span class="close-btn qa-close" onclick="toggleQASection(false)">×</span>
+  </div>
+
+  <table id="qa-table">
+    <thead>
+      <tr>
+        <th>STT</th>
+        <th>Câu hỏi chính</th>
+        <th>Trả lời</th>
+        <th>File</th>
+        <th>Hành động</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<!-- Form popup Thêm / Sửa -->
+  <div id="add-qna-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title">➕ Thêm Q&A</span>
+        <span id="close-add-qna" class="close-btn">×</span>
+      </div>
+      <form id="qaForm">
+        <label>Câu hỏi (1 câu mỗi dòng):</label><br />
+        <textarea id="new-questions" required></textarea><br />
+
+        <label>Trả lời (tuỳ chọn):</label><br />
+        <textarea id="new-answer"></textarea><br />
+
+        <label>File đính kèm:</label><br />
+        <input type="file" id="new-file" /><br /><br />
+
+        <button type="submit" id="save-qna-btn">Lưu Q&A</button>
+      </form>
+      <p id="save-msg" class="hidden">✅ Đã lưu Q&A thành công!</p>
+    </div>
+  </div>
+
+  <div id="confirm-modal" class="modal hidden">
+  <div class="modal-content">
+    <h3 class="confirm-title">
+      <i class="fas fa-trash"></i> Xóa Q&A
+    </h3>
+    <p class="confirm-text">Bạn có chắc muốn xoá Q&A này?</p>
+    <div class="confirm-actions">
+      <button id="confirm-ok" class="confirm-btn danger">OK</button>
+      <button id="confirm-cancel" class="confirm-btn">Thoát</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nút tròn + khung chatbot lồng chung -->
+<div id="chat-wrapper">
+    <div id="chat-icon" onclick="toggleChat()">
+        <i class="fas fa-comment-dots"></i>
+    </div>
+
+  <!-- Khung chatbot bị ẩn hoàn toàn ban đầu -->
+  <div id="chatbot-box" class="hidden">
+    <div class="chat-header">
+      <img src="./assets/img/new_white.png" class="bot-avatar" alt="avatar">
+      <span class="bot-title">Trợ lý KVIP</span>
+      <span class="chat-close" onclick="toggleChat()">×</span>
+    </div>
+    <div class="chat-body" id="chat-body">
+      <div class="msg-row bot">
+        <img src="./assets/img/bot.jpg" class="msg-avatar" alt="bot">
+        <div class="msg-bubble">Xin chào! Tôi có thể giúp gì cho bạn?</div>
+      </div>
+
+    </div>
+    <div class="chat-footer">
+      <input type="text" id="user-input" placeholder="Nhập tin nhắn..." />
+      <button onclick="sendMessage()">Gửi</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-message">Đã lưu thành công!</div>
+
+<script src="app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+[
+  {
+    "questions": [
+      "Vườn ươm là gì?",
+      "Hãy giới thiệu về Vườn Ươm",
+      "Thông tin về KVIP"
+    ],
+    "answer": "🌱 Giới thiệu chung về Vườn ươm Công nghệ Công nghiệp Việt Nam - Hàn Quốc (KVIP):\r\nKVIP (Korea – Vietnam Incubator Park) là dự án hợp tác giữa Chính phủ Việt Nam và Chính phủ Hàn Quốc, được khánh thành vào ngày 14/11/2015 tại Khu công nghiệp Trà Nóc 2, quận Ô Môn, thành phố Cần Thơ. Dự án có tổng vốn đầu tư 21,13 triệu USD, trong đó Chính phủ Hàn Quốc hỗ trợ 17,7 triệu USD từ nguồn vốn ODA không hoàn lại, phần còn lại là vốn đối ứng của Việt Nam.\r\n🎯 Mục tiêu và nhiệm vụ:\r\n- Hỗ trợ nghiên cứu và phát triển các ngành có lợi thế cạnh tranh của thành phố Cần Thơ và khu vực Đồng bằng sông Cửu Long,\r\n- Ươm tạo doanh nghiệp công nghệ, thúc đẩy đổi mới công nghệ và phát triển thị trường,\r\n- Gắn kết đào tạo, nghiên cứu khoa học và phát triển công nghệ với sản xuất, kinh doanh và dịch vụ.\r\n🏢 Cơ sở hạ tầng và tổ chức:\r\n- Diện tích 4,5 ha với các hạng mục:\r\n  + Khu nhà 4 tầng (13.000 m²): văn phòng điều hành, hơn 30 phòng hỗ trợ doanh nghiệp, 5 phòng họp và hội trường 160 chỗ\r\n  + Khu nhà thí nghiệm 2 tầng: trang bị hiện đại cho nghiên cứu và kiểm tra chất lượng sản phẩm\r\n  + Khu nhà xưởng: 3 xưởng hiện đại phục vụ sản xuất thử nghiệm\r\n- Hệ thống phụ trợ: khu trưng bày, bãi đỗ xe, công viên, hồ nước và hệ thống xử lý nước thải 200 m³/ngày đêm\r\n🤝 Hợp tác và hỗ trợ:\r\nKVIP là nơi kết nối doanh nghiệp, nhà khoa học và cơ quan quản lý với sự hỗ trợ từ chuyên gia trong/ngoài nước, đặc biệt từ Hàn Quốc.\r\nCam kết hỗ trợ doanh nghiệp nghiên cứu, phát triển sản phẩm, nâng cao giá trị và đáp ứng thị trường xuất khẩu.\r\n📞 Thông tin liên hệ:\r\n- Địa chỉ: Đường số 8, Khu công nghiệp Trà Nóc II, phường Phước Thới, quận Ô Môn, TP. Cần Thơ\r\n- Điện thoại: 0292 3761 120\r\n- Email: vuonuomcongnghe_vnhq@cantho.gov.vn\r\n- Website: www.kvip.com.vn"
+  },
+  {
+    "questions": [
+      "Cho tôi xin mẫu đơn nghỉ phép",
+      "Cách viết đơn xin nghỉ phép",
+      "Có mẫu đơn nghỉ việc không?"
+    ],
+    "answer_file": "don_xin_nghi_phep.docx"
+  },
+  {
+    "questions": [
+      "Có file Excel thống kê không?",
+      "Cho tôi bảng tổng hợp",
+      "Bạn có file bảng tính không?"
+    ],
+    "answer_file": "bang_tong_hop.xlsx"
+  },
+  {
+    "questions": [
+      "Cho tôi file báo cáo tiến độ dự án"
+    ],
+    "answer_file": "BaoCaoTienDoDuAn.pdf"
+  }
+]
