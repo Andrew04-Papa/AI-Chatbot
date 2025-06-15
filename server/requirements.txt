@@ -1,0 +1,12 @@
+flask==2.2.5
+werkzeug==2.2.3
+flask-cors==3.0.10
+sentence-transformers==2.2.2
+torch==2.2.0
+pymupdf>=1.22.0
+python-docx==0.8.11
+psycopg2-binary>=2.9.9
+pandas>=2.1.0
+openpyxl==3.0.10
+numpy<2
+huggingface_hub<0.16

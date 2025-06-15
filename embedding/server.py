@@ -1,346 +1,282 @@
-# Gộp embedding_server.py + file_chatbot_server.py
-from flask import Flask, request, jsonify, send_from_directory
+import torch
 from sentence_transformers import SentenceTransformer, util
-from flask_cors import CORS
-import os, json, torch, fitz  
-import shutil
+import fitz
 from docx import Document
-import webbrowser
-import threading
-import threading
-
-# 🧹 Xoá tất cả file trong embedding/uploads mỗi lần khởi động
-upload_folder = os.path.join("embedding", "uploads")
-if os.path.exists(upload_folder):
-    for f in os.listdir(upload_folder):
-        file_path = os.path.join(upload_folder, f)
-        if os.path.isfile(file_path):
-            os.remove(file_path)
-
+import pandas as pd
+from flask import Flask, request, jsonify
+from flask import send_from_directory
+from flask_cors import CORS
+import psycopg2
+import psycopg2.extras
+import sys
+import os
+import json
+import unicodedata
 
 app = Flask(__name__)
 CORS(app)
+
 model = SentenceTransformer("all-MiniLM-L6-v2")
-
-def delete_file_delayed(path, delay=300):  # delay = 300s = 5 phút
-    threading.Timer(delay, lambda: os.remove(path)).start()
-
-def delete_if_unused(filename):
-    global current_file_context, file_documents
-    if current_file_context is None or current_file_context["filename"] != filename:
-        file_path = os.path.join("embedding/uploads", filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        file_documents = [doc for doc in file_documents if doc["filename"] != filename]
-        with open("embedding/file_data.json", "w", encoding="utf-8") as f:
-            json.dump([{"filename": d["filename"], "chunks": d["chunks"]} for d in file_documents], f, ensure_ascii=False)
-
-# ========================== Q&A DATA ==========================
-qa_file = os.path.join(os.path.dirname(__file__), 'qaData.json')
-qa_data = []
-qa_corpus = []
 qa_embeddings = []
+qa_corpus = []
+
+def get_file_content(filename):
+    upload_folder = os.path.join(os.path.dirname(__file__), "uploads")
+    file_path = os.path.join(upload_folder, filename)
+    ext = os.path.splitext(filename)[1].lower()
+    try:
+        if ext == ".pdf":
+            doc = fitz.open(file_path)
+            text = ""
+            for page in doc:
+                text += page.get_text()
+            return text
+        elif ext == ".docx":
+            doc = Document(file_path)
+            text = "\n".join([p.text for p in doc.paragraphs])
+            return text
+        elif ext == ".txt":
+            with open(file_path, "r", encoding="utf-8") as f:
+                text = f.read()
+            return text
+        else:
+            return "Không hỗ trợ định dạng file này"
+    except Exception as e:
+        return f"Lỗi khi đọc file: {str(e)}"
+
+# Thêm đường dẫn server vào sys.path để import db_config
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'server'))
+from db_config import DB_CONFIG
+
+def get_db_connection():
+    """Tạo kết nối đến PostgreSQL database"""
+    conn = psycopg2.connect(**DB_CONFIG)
+    conn.autocommit = True
+    return conn
 
 def load_qa():
-    with open(qa_file, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-def save_qa(data):
-    with open(qa_file, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    """Load Q&A từ database"""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cursor.execute("SELECT id, questions, answer, answer_file FROM qa_entries ORDER BY id")
+    rows = cursor.fetchall()
+    qa_data = []
+    for row in rows:
+        # Parse questions nếu là chuỗi JSON
+        questions = row['questions']
+        if isinstance(questions, str):
+            try:
+                questions = json.loads(questions)
+            except Exception:
+                questions = [questions]
+        qa_data.append({
+            'id': row['id'],
+            'questions': questions,
+            'answer': row['answer'],
+            'answer_file': row['answer_file']
+        })
+    cursor.close()
+    conn.close()
+    return qa_data
 
 def update_qa_embeddings():
-    global qa_data, qa_corpus, qa_embeddings
-    qa_data = load_qa()
-    qa_corpus = [q for entry in qa_data for q in entry['questions']]
-    qa_embeddings = model.encode(qa_corpus, convert_to_tensor=True)
+    global qa_embeddings, qa_corpus
+    qa_list = load_qa()
+    qa_corpus = [q for qa in qa_list for q in qa["questions"]]
+    if qa_corpus:
+        qa_embeddings = model.encode(qa_corpus, convert_to_tensor=True)
+    else:
+        qa_embeddings = []
 
-update_qa_embeddings()
+# Thay thế hàm save_qa
+def save_qa(data):
+    """Không cần thiết khi sử dụng PostgreSQL"""
+    pass  # Dữ liệu được lưu trực tiếp vào database trong các API endpoints
 
-@app.route('/qa-list', methods=['GET'])
-def get_qa_list():
+@app.route("/api/qa", methods=["GET"])
+def api_get_qa():
+    data = load_qa()
+    return jsonify(data)
+
+@app.route("/qa-list", methods=["GET"])
+def qa_list():
     return jsonify(load_qa())
 
-@app.route('/qa-add', methods=['POST'])
-def add_qa():
-    questions = request.form.getlist('questions[]')
-    answer = request.form.get('answer', '')
-    file = request.files.get('file')
-    new_entry = {"questions": questions}
-    if answer:
-        new_entry['answer'] = answer
-    if file and file.filename:
-        file_path = os.path.join('embedding/files', file.filename)
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        file.save(file_path)
-        new_entry['answer_file'] = file.filename
-    data = load_qa()
-    data.append(new_entry)
-    save_qa(data)
-    update_qa_embeddings()
-    return jsonify({'message': '✅ Đã thêm Q&A thành công!'})
+@app.route("/qa-add", methods=["POST"])
+def qa_add():
+    questions = request.form.getlist("questions[]")
+    print("DEBUG: questions nhận được khi add:", questions)
+    if not questions or (len(questions) == 1 and not questions[0].strip()):
+        # Nếu không có câu hỏi, trả về lỗi
+        return jsonify({"message": "Câu hỏi không được để trống!"}), 400
+    if isinstance(questions, str):
+        questions = [questions]
+    answer = request.form.get("answer", "")
+    file = request.files.get("file")
+    answer_file = None
 
-@app.route('/qa-update/<int:index>', methods=['POST'])
-def update_qa(index):
-    questions = request.form.getlist('questions[]')
-    answer = request.form.get('answer', '')
-    file = request.files.get('file')
-    data = load_qa()
-    if index >= len(data):
-        return jsonify({'error': 'Index không hợp lệ'}), 400
-    data[index]['questions'] = questions
-    data[index]['answer'] = answer
-    if file and file.filename:
-        old = data[index].get('answer_file')
-        if old:
-            old_path = os.path.join('embedding/files', old)
-            if os.path.exists(old_path): os.remove(old_path)
-        file_path = os.path.join('embedding/files', file.filename)
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        file.save(file_path)
-        data[index]['answer_file'] = file.filename
-    save_qa(data)
-    update_qa_embeddings()
-    return jsonify({'message': '✅ Đã cập nhật Q&A thành công!'})
+    if file:
+        upload_folder = os.path.join(os.path.dirname(__file__), "uploads")
+        os.makedirs(upload_folder, exist_ok=True)
+        file.save(os.path.join(upload_folder, file.filename))
+        answer_file = file.filename
 
-@app.route('/qa-delete/<int:index>', methods=['DELETE'])
-def delete_qa(index):
-    data = load_qa()
-    if index >= len(data): return jsonify({'error': 'Index không tồn tại'}), 404
-    entry = data.pop(index)
-    if 'answer_file' in entry:
-        fpath = os.path.join('embedding/files', entry['answer_file'])
-        if os.path.exists(fpath): os.remove(fpath)
-    save_qa(data)
-    update_qa_embeddings()
-    return jsonify({'message': '✅ Đã xoá Q&A + file thành công!'})
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO qa_entries (questions, answer, answer_file) VALUES (%s, %s, %s)",
+        (json.dumps(questions, ensure_ascii=False), answer, answer_file)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+    update_qa_embeddings() 
+    return jsonify({"message": "success"})
 
-@app.route('/files/<path:filename>')
-def download_file(filename):
-    uploads_dir = os.path.join(os.getcwd(), "embedding", "uploads")
-    files_dir = os.path.join(os.getcwd(), "embedding", "files")
-    fname_lower = filename.lower()
+@app.route("/qa-update/<int:index>", methods=["POST"])
+def qa_update(index):
+    questions = request.form.getlist("questions[]")
+    if not questions or (len(questions) == 1 and not questions[0].strip()):
+        return jsonify({"message": "Câu hỏi không được để trống!"}), 400
+    if isinstance(questions, str):
+        questions = [questions]
+    answer = request.form.get("answer", "")
+    file = request.files.get("file")
+    answer_file = None
 
-    print(f"[DOWNLOAD] Yêu cầu tải file: {filename}")
-    print(f"[CHECK] uploads/: {os.listdir(uploads_dir)}")
+    if file:
+        upload_folder = os.path.join(os.path.dirname(__file__), "uploads")
+        os.makedirs(upload_folder, exist_ok=True)
+        file.save(os.path.join(upload_folder, file.filename))
+        answer_file = file.filename
 
-    # ✅ Tìm file trong uploads/
-    for f in os.listdir(uploads_dir):
-        if f.lower() == fname_lower:
-            print(f"[FOUND] File có sẵn trong uploads/: {f}")
-            return send_from_directory(uploads_dir, f, as_attachment=True)
-
-    # ✅ Nếu chưa có → tìm trong files/ và tự động copy sang uploads/
-    for f in os.listdir(files_dir):
-        if f.lower() == fname_lower:
-            src = os.path.join(files_dir, f)
-            dst = os.path.join(uploads_dir, f)
-            shutil.copyfile(src, dst)
-            print(f"[AUTO-COPY] File vừa được copy từ files → uploads/: {f}")
-            return send_from_directory(uploads_dir, f, as_attachment=True)
-
-    print(f"[ERROR] Không tìm thấy file: {filename}")
-    return jsonify({"error": "Không tìm thấy file"}), 404
-
-# ======================= FILE CHATBOT =======================
-CHUNK_SIZE = 50
-file_documents = []
-file_documents = []
-current_file_context = None  
-@app.route("/upload", methods=["POST"])
-def upload_file():
-    file = request.files['file']
-    ext = file.filename.split('.')[-1].lower()
-    save_path = os.path.join("embedding/uploads", file.filename)
-    os.makedirs("embedding/uploads", exist_ok=True)
-    file.save(save_path)
-    delete_file_delayed(save_path) 
-    if ext == 'pdf':
-        text = extract_text_from_pdf(save_path)
-    elif ext == 'docx':
-        text = extract_text_from_docx(save_path)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if answer_file:
+        cursor.execute(
+            "UPDATE qa_entries SET questions=%s, answer=%s, answer_file=%s WHERE id=%s",
+            (json.dumps(questions, ensure_ascii=False), answer, answer_file, index+1)
+        )
     else:
-        return jsonify({"error": "Chỉ hỗ trợ PDF và DOCX"}), 400
-    chunks = chunk_text(text)
-    embeds = model.encode(chunks, convert_to_tensor=True)
-    file_documents.append({"filename": file.filename, "chunks": chunks, "embeddings": embeds})
-    global current_file_context
-    current_file_context = file_documents[-1]  
-    with open("embedding/file_data.json", "w", encoding="utf-8") as f:
-        json.dump([{"filename": d["filename"], "chunks": d["chunks"]} for d in file_documents], f, ensure_ascii=False)
-    return jsonify({"message": "Đã xử lý file", "chunks": len(chunks)})
+        cursor.execute(
+            "UPDATE qa_entries SET questions=%s, answer=%s WHERE id=%s",
+            (json.dumps(questions, ensure_ascii=False), answer, index+1)
+        )
+    conn.commit()
+    cursor.close()
+    conn.close()
+    update_qa_embeddings()
+    return jsonify({"message": "success"})
 
+@app.route("/qa-delete/<int:index>", methods=["DELETE"])
+def qa_delete(index):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM qa_entries WHERE id=%s", (index+1,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    update_qa_embeddings() 
+    return jsonify({"message": "deleted"})
 
-def chunk_text(text, size=CHUNK_SIZE):
-    words = text.split()
-    return [' '.join(words[i:i+size]) for i in range(0, len(words), size)]
+@app.route("/files/<filename>")
+def serve_file(filename):
+    upload_folder = os.path.join(os.path.dirname(__file__), "uploads")
+    return send_from_directory(upload_folder, filename, as_attachment=True)
 
-def extract_text_from_pdf(path):
-    doc = fitz.open(path)
-    return "\n".join([p.get_text() for p in doc])
+def normalize_text(text):
+    # Loại bỏ dấu tiếng Việt, chuyển về chữ thường, loại bỏ khoảng trắng thừa
+    text = unicodedata.normalize('NFD', text)
+    text = ''.join([c for c in text if unicodedata.category(c) != 'Mn'])
+    return text.lower().strip()
 
-def extract_text_from_docx(path):
-    doc = Document(path)
-    return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-
-# ======================= API CHAT =======================
 @app.route("/chat", methods=["POST"])
 def chat():
-    question = request.json.get("question", "")
-    mode = request.json.get("use", "auto")
-    query_vec = model.encode(question, convert_to_tensor=True)
-    best = {"score": -1, "answer": "❓ Không tìm thấy câu trả lời phù hợp."}
+    data = request.get_json()
+    question = data.get("question") or data.get("message") or ""
+    question_norm = normalize_text(question)
+    qa_list = load_qa()
+    print("DEBUG: Câu hỏi nhận được:", question)
+    print("DEBUG: Dữ liệu Q&A:", qa_list)
+    # So khớp tuyệt đối trước
+    for qa in qa_list:
+        for q in qa["questions"]:
+            q_norm = normalize_text(q)
+            if question_norm == q_norm:
+                if qa.get("answer_file"):
+                    # Nếu người dùng hỏi về nội dung file
+                    if "nội dung" in question_norm or "bên trong" in question_norm or "trong file" in question_norm:
+                        text = get_file_content(qa["answer_file"])
+                        return jsonify({"answer": text})
+                    # Nếu chỉ hỏi về file, trả về link tải file như cũ
+                    return jsonify({"answer_file": qa["answer_file"]})
+                return jsonify({"answer": qa.get("answer", "Không có câu trả lời")})
 
-    if mode in ["qa", "auto"]:
+    # So khớp gần đúng
+    if len(question_norm) > 4:
+        for qa in qa_list:
+            for q in qa["questions"]:
+                q_norm = normalize_text(q)
+                if question_norm in q_norm or q_norm in question_norm:
+                    if qa.get("answer_file"):
+                        # Nếu người dùng hỏi về nội dung file
+                        if "nội dung" in question_norm or "bên trong" in question_norm or "trong file" in question_norm:
+                            text = get_file_content(qa["answer_file"])
+                            return jsonify({"answer": text})
+                        # Nếu chỉ hỏi về file, trả về link tải file như cũ
+                        return jsonify({"answer_file": qa["answer_file"]})
+                    return jsonify({"answer": qa.get("answer", "Không có câu trả lời")})
+
+    # Nếu vẫn không tìm thấy, dùng embedding
+    if qa_embeddings:
+        query_vec = model.encode([question], convert_to_tensor=True)
         cos = util.cos_sim(query_vec, qa_embeddings)[0]
         idx = torch.argmax(cos).item()
         score = cos[idx].item()
-        if score > best['score'] and score > 0.25:  
-            entry = next(e for e in qa_data if qa_corpus[idx] in e['questions'])
+        print("DEBUG: Điểm embedding:", score)
+        if score > 0.5:
+            matched_q = qa_corpus[idx]
+            for qa in qa_list:
+                if matched_q in qa["questions"]:
+                    if qa.get("answer_file"):
+                        # Nếu người dùng hỏi về nội dung file
+                        if "nội dung" in question_norm or "bên trong" in question_norm or "trong file" in question_norm:
+                            text = get_file_content(qa["answer_file"])
+                            return jsonify({"answer": text})
+                        # Nếu chỉ hỏi về file, trả về link tải file như cũ
+                        return jsonify({"answer_file": qa["answer_file"]})
+                    return jsonify({"answer": qa.get("answer", "Không có câu trả lời")})
 
-            fileBlock = ""
-            if 'answer_file' in entry:
-                fname = entry['answer_file']
-                url = f"/files/{fname}"
-                fileBlock = f"""
-                    <div>
-                        <div style="display: flex; align-items: center; font-weight: bold; color: #003e64;">
-                            <span style="font-size: 20px; font-weight: bold;">📄</span>
-                            <span style="font-weight: bold; font-size: 16px; color: #002b50;">Tệp đính kèm:</span>
-                        </div>
-                        <div style="margin-left: 4px;">
-                            <a href="{url}" target="_blank"
-                                style="color: #7a1ea1; text-decoration: none;">
-                                {fname}
-                            </a>
-                        </div>
-                    </div>
-                    """
-            # Chuyển nội dung xuống dòng HTML
-            answer_html = entry.get('answer', '').replace('\r\n', '<br>').replace('\n', '<br>')
+    return jsonify({"answer": "❌ Không tìm thấy câu trả lời phù hợp."})
 
-            # Ghép file và nội dung
-            if fileBlock and answer_html:
-                full_answer = fileBlock + "<br>" + answer_html
-            elif fileBlock:
-                full_answer = fileBlock
-            else:
-                full_answer = answer_html
+update_qa_embeddings()
 
-            if (answer_html or fileBlock) and score > best['score']:
-                best = {"score": score, "answer": full_answer}
-            else:
-                best = {"score": -1, "answer": "❓ Không tìm thấy câu trả lời phù hợp."}
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
 
-    if mode in ["file", "auto"]:
-        # ✅ Trích tên file được đề cập trong câu hỏi (không phân biệt hoa thường)
-        global current_file_context, matched_doc
-        filename_in_question = question.lower().replace(" ", "")
-        matched_doc = current_file_context  
-        if not file_documents:
-            print("🆕 Đang nạp lại tất cả file từ embedding/files/")
-            for fname in os.listdir("embedding/files"):
-                if fname.endswith(".pdf") or fname.endswith(".docx"):
-                    full_path = os.path.join("embedding/files", fname)
-                    ext = fname.split('.')[-1].lower()
-                    if ext == 'pdf':
-                        text = extract_text_from_pdf(full_path)
-                    elif ext == 'docx':
-                        text = extract_text_from_docx(full_path)
-                    else:
-                        continue
-                    chunks = chunk_text(text)
-                    embeds = model.encode(chunks, convert_to_tensor=True)
-                    file_documents.append({
-                        "filename": fname,
-                        "chunks": chunks,
-                        "embeddings": embeds
-                    })
-            print(f"✅ Đã nạp {len(file_documents)} file vào RAM")
-            print(f"🔔 Câu hỏi nhận được: {question}")
-            print(f"📦 Hiện có {len(file_documents)} file trong RAM")
-            print(f"🔍 File cần tìm (normalized): {filename_in_question}")
-        
-        from difflib import SequenceMatcher
-
-        best_match = None
-        highest_ratio = 0.0
-        for doc in file_documents:
-            fname_base = os.path.splitext(doc["filename"])[0].lower().replace(" ", "")
-            ratio = SequenceMatcher(None, filename_in_question, fname_base).ratio()
-            if ratio > highest_ratio:
-                highest_ratio = ratio
-                best_match = doc
-
-        if best_match and highest_ratio > 0.6:  
-            doc = best_match
-            fname = doc["filename"]
-            upload_path = os.path.join("embedding/uploads", fname)
-            original_path = os.path.join("embedding/files", fname)
-
-            if not os.path.exists(upload_path) and os.path.exists(original_path):
-                shutil.copyfile(original_path, upload_path)
-
-            if "embeddings" not in doc:
-                ext = fname.split('.')[-1].lower()
-                if ext == 'pdf':
-                    text = extract_text_from_pdf(upload_path)
-                elif ext == 'docx':
-                    text = extract_text_from_docx(upload_path)
-                else:
-                    return jsonify({"error": "File không hỗ trợ"}), 400
-                chunks = chunk_text(text)
-                embeds = model.encode(chunks, convert_to_tensor=True)
-                doc["chunks"] = chunks
-                doc["embeddings"] = embeds
-
-            matched_doc = doc
-            current_file_context = doc
-            threading.Timer(300, lambda: delete_if_unused(fname)).start()
-
-        if matched_doc:
-            cos = util.cos_sim(query_vec, matched_doc["embeddings"])[0]
-            print(f"[QUESTION] {question}")
-            for i, c in enumerate(cos):
-                print(f"Chunk {i} | Score: {c.item():.4f} | Preview: {matched_doc['chunks'][i][:60]}")
-
-            top_k = 3
-            top_idxs = torch.topk(cos, top_k).indices.tolist()
-
-            best_text = "<br><br>".join([matched_doc["chunks"][i] for i in top_idxs])
-            score = cos[top_idxs[0]].item()
-            if score > best['score']:
-                best = {
-                    "score": score,
-                    "answer": f"<b>Trích từ file <u>{matched_doc['filename']}</u>:</b><br>{best_text}"
-                }
-
-            # 🧹 Dọn sau 5 phút nếu không dùng tiếp
-            if current_file_context:
-                fname = current_file_context["filename"]
-                threading.Timer(300, lambda: delete_if_unused(fname)).start()
-                current_file_context = None
-    return jsonify(best) 
-
-
-# ✅ Phục vụ index.html từ thư mục client
-@app.route('/')
-def serve_index():
-    return send_from_directory(os.path.join(os.path.dirname(__file__), '../client'), 'index.html')
-
-# ✅ Phục vụ tất cả file tĩnh từ client/
-@app.route('/<path:path>')
-def serve_static(path):
-    return send_from_directory(os.path.join(os.path.dirname(__file__), '../client'), path)
-
-def open_browser_once():
-    if not os.path.exists(".browser_opened"):
-        with open(".browser_opened", "w") as f:
-            f.write("yes")
-        webbrowser.open_new("http://localhost:5000")
-
-if __name__ == '__main__':
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-        threading.Timer(1, open_browser_once).start()
-    app.run(debug=True)
-
+@app.route("/file-content/<filename>")
+def file_content(filename):
+    upload_folder = os.path.join(os.path.dirname(__file__), "uploads")
+    file_path = os.path.join(upload_folder, filename)
+    ext = os.path.splitext(filename)[1].lower()
+    try:
+        if ext == ".pdf":
+            import fitz
+            doc = fitz.open(file_path)
+            text = ""
+            for page in doc:
+                text += page.get_text()
+            return jsonify({"content": text})
+        elif ext == ".docx":
+            from docx import Document
+            doc = Document(file_path)
+            text = "\n".join([p.text for p in doc.paragraphs])
+            return jsonify({"content": text})
+        elif ext == ".txt":
+            with open(file_path, "r", encoding="utf-8") as f:
+                text = f.read()
+            return jsonify({"content": text})
+        else:
+            return jsonify({"error": "Không hỗ trợ định dạng file này"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

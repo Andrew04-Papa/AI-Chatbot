@@ -28,5 +28,12 @@
       "Cho tôi file báo cáo tiến độ dự án"
     ],
     "answer_file": "BaoCaoTienDoDuAn.pdf"
+  },
+  {
+    "questions": [
+      "Cho tôi file biên bản họp"
+    ],
+    "answer_file": "BienBanHopSprint.pdf",
+    "answer": ""
   }
 ]
