@@ -254,7 +254,7 @@ function sendMessageToOllama(promptText) {
 
       return "❌ Không có phản hồi"
     })
-    .catch((err) => "⚠️ Lỗi kết nối máy chủ: " + err.message)
+    .catch((err) => "❌ Không tìm thấy kết quả phù hợp")
 }
 
 // ✅ Làm sạch emoji và ký tự ngoài tiếng Việt
