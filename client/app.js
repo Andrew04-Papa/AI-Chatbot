@@ -116,25 +116,27 @@ document.addEventListener("DOMContentLoaded", () => {
     const fileInput = document.getElementById("new-file")
     const file = fileInput.files[0]?.name || null
 
+    // ✅ Kiểm tra có ít nhất 1 trong 2: answer hoặc file
+    if (!answer && !file) {
+      showToast("❌ Phải có ít nhất câu trả lời HOẶC file đính kèm!")
+      return
+    }
+
     const resQA = await fetch("http://localhost:5000/qa-list")
     const qaList = await resQA.json()
 
-    const isDuplicate = qaList.some(
-      (item) =>
-        questions.some((q) => item.questions.includes(q)) ||
-        item.answer === answer ||
-        (file && item.answer_file === file),
-    )
-
-    if (isDuplicate && !isEditing) {
-      let duplicateType = ""
-
+    // ✅ Sửa logic kiểm tra duplicate - chỉ kiểm tra khi không phải đang edit
+    if (!isEditing) {
       const isDuplicateQuestion = qaList.some((item) => questions.some((q) => item.questions.includes(q)))
 
-      const isDuplicateAnswer = qaList.some((item) => item.answer === answer)
-      const isDuplicateFile = qaList.some((item) => file && item.answer_file === file)
+      // ✅ Chỉ kiểm tra duplicate answer khi có answer
+      const isDuplicateAnswer = answer && qaList.some((item) => item.answer && item.answer.trim() === answer)
 
-      if ((isDuplicateQuestion || isDuplicateAnswer || isDuplicateFile) && !isEditing) {
+      // ✅ Chỉ kiểm tra duplicate file khi có file
+      const isDuplicateFile = file && qaList.some((item) => item.answer_file === file)
+
+      if (isDuplicateQuestion || isDuplicateAnswer || isDuplicateFile) {
+        let duplicateType = ""
         if (isDuplicateQuestion) duplicateType += "❗ Câu hỏi đã tồn tại.\n"
         if (isDuplicateAnswer) duplicateType += "❗ Câu trả lời đã tồn tại.\n"
         if (isDuplicateFile) duplicateType += "❗ File đính kèm đã tồn tại."
@@ -142,13 +144,11 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast(duplicateType.trim())
         return
       }
-
-      return
     }
 
     const formData = new FormData()
     questions.forEach((q) => formData.append("questions[]", q))
-    formData.append("answer", answer)
+    formData.append("answer", answer) // Có thể là empty string
     if (fileInput.files[0]) {
       formData.append("file", fileInput.files[0])
     }
@@ -165,7 +165,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const data = await res.json()
 
-      if (data.message) {
+      if (data.message === "success") {
         const toastMsg = isEditing ? "✏️ Đã cập nhật Q&A thành công!" : "✅ Đã thêm Q&A mới!"
 
         showToast(toastMsg)
@@ -178,7 +178,7 @@ document.addEventListener("DOMContentLoaded", () => {
           loadQA()
         }, 300)
       } else {
-        showToast("❌ Lưu thất bại.")
+        showToast("❌ Lưu thất bại: " + (data.message || "Lỗi không xác định"))
       }
     } catch (err) {
       showToast("⚠️ Không kết nối được tới máy chủ.")
