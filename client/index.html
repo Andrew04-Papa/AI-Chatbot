@@ -34,29 +34,29 @@
 </div>
 
 <!-- Form popup Thêm / Sửa -->
-  <div id="add-qna-modal" class="modal hidden">
-    <div class="modal-content">
-      <div class="modal-header">
-        <span class="modal-title">➕ Thêm Q&A</span>
-        <span id="close-add-qna" class="close-btn">×</span>
-      </div>
-      <form id="qaForm">
-        <label>Câu hỏi (1 câu mỗi dòng):</label><br />
-        <textarea id="new-questions" required></textarea><br />
-
-        <label>Trả lời (tuỳ chọn):</label><br />
-        <textarea id="new-answer"></textarea><br />
-
-        <label>File đính kèm:</label><br />
-        <input type="file" id="new-file" /><br /><br />
-
-        <button type="submit" id="save-qna-btn">Lưu Q&A</button>
-      </form>
-      <p id="save-msg" class="hidden">✅ Đã lưu Q&A thành công!</p>
+<div id="add-qna-modal" class="modal hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <span class="modal-title">➕ Thêm Q&A</span>
+      <span id="close-add-qna" class="close-btn">×</span>
     </div>
-  </div>
+    <form id="qaForm">
+      <label>Câu hỏi (1 câu mỗi dòng):</label><br />
+      <textarea id="new-questions" required></textarea><br />
 
-  <div id="confirm-modal" class="modal hidden">
+      <label>Trả lời (tuỳ chọn):</label><br />
+      <textarea id="new-answer"></textarea><br />
+
+      <label>File đính kèm:</label><br />
+      <input type="file" id="new-file" /><br /><br />
+
+      <button type="submit" id="save-qna-btn">Lưu Q&A</button>
+    </form>
+    <p id="save-msg" class="hidden">✅ Đã lưu Q&A thành công!</p>
+  </div>
+</div>
+
+<div id="confirm-modal" class="modal hidden">
   <div class="modal-content">
     <h3 class="confirm-title">
       <i class="fas fa-trash"></i> Xóa Q&A
@@ -80,6 +80,9 @@
     <div class="chat-header">
       <img src="./assets/img/new_white.png" class="bot-avatar" alt="avatar">
       <span class="bot-title">Trợ lý KVIP</span>
+      <button onclick="clearChatHistory()" style="background: none; border: none; color: white; margin-right: 10px; cursor: pointer;" title="Xóa lịch sử chat">
+        <i class="fas fa-trash"></i>
+      </button>
       <span class="chat-close" onclick="toggleChat()">×</span>
     </div>
     <div class="chat-body" id="chat-body">
@@ -87,7 +90,6 @@
         <img src="./assets/img/bot.jpg" class="msg-avatar" alt="bot">
         <div class="msg-bubble">Xin chào! Tôi có thể giúp gì cho bạn?</div>
       </div>
-
     </div>
     <div class="chat-footer">
       <input type="text" id="user-input" placeholder="Nhập tin nhắn..." />

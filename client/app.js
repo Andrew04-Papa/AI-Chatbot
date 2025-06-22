@@ -1,10 +1,98 @@
 let pendingDeleteIndex = null
 
-// Cải thiện conversation context
+// Cải thiện conversation context với session management
 const conversationContext = {
+  sessionId: null,
   lastFile: null,
   lastSection: null,
   conversationHistory: [],
+}
+
+// Khởi tạo session khi load trang
+async function initializeSession() {
+  try {
+    const response = await fetch("http://localhost:5000/conversation-history", {
+      credentials: "include",
+    })
+    const data = await response.json()
+    conversationContext.sessionId = data.session_id
+    conversationContext.conversationHistory = data.history || []
+
+    // Load lại lịch sử chat nếu có
+    loadChatHistory()
+    console.log("Session initialized:", conversationContext.sessionId)
+  } catch (error) {
+    console.error("Lỗi khởi tạo session:", error)
+  }
+}
+
+function loadChatHistory() {
+  const chatBody = document.getElementById("chat-body")
+
+  // Xóa tin nhắn chào mừng cũ
+  chatBody.innerHTML = ""
+
+  // Thêm tin nhắn chào mừng
+  const welcomeDiv = document.createElement("div")
+  welcomeDiv.className = "msg-row bot"
+  welcomeDiv.innerHTML = `
+    <img src="./assets/img/bot.jpg" class="msg-avatar" alt="bot">
+    <div class="msg-bubble">Xin chào! Tôi có thể giúp gì cho bạn?</div>
+  `
+  chatBody.appendChild(welcomeDiv)
+
+  // Load lịch sử từ server - kiểm tra dữ liệu trước khi hiển thị
+  if (conversationContext.conversationHistory && conversationContext.conversationHistory.length > 0) {
+    conversationContext.conversationHistory.forEach((item) => {
+      // Kiểm tra dữ liệu hợp lệ
+      if (!item.user_message || !item.bot_response) {
+        return // Skip invalid items
+      }
+
+      // Thêm tin nhắn user
+      const userDiv = document.createElement("div")
+      userDiv.className = "msg-row user"
+      userDiv.innerHTML = `
+        <div class="msg-bubble">${item.user_message}</div>
+        <img src="./assets/img/user.webp" class="msg-avatar" alt="user">
+      `
+      chatBody.appendChild(userDiv)
+
+      // Thêm tin nhắn bot
+      const botDiv = document.createElement("div")
+      botDiv.className = "msg-row bot"
+
+      if (item.response_type === "file") {
+        // Hiển thị file attachment với layout dọc
+        const fileBlock = `<div style="display: flex; flex-direction: column; align-items: flex-start;">
+  <div style="display: flex; align-items: center; gap: 4px;">
+    <span style="font-size: 20px; color: #6c757d;">📄</span>
+    <span style="font-weight: bold; font-size: 14px; color: #495057;">Tệp đính kèm</span>
+  </div>
+  <a href="http://localhost:5000/files/${item.file_referenced}" target="_blank" style="color: #7a1ea1; text-decoration: none; font-size: 15px; font-weight: 500; word-break: break-all; line-height: 1.1; margin-top: -2px;">${item.file_referenced}</a>
+</div>`
+
+        botDiv.innerHTML = `
+          <img src="./assets/img/bot.jpg" class="msg-avatar" alt="bot">
+          <div class="msg-bubble">${fileBlock}</div>
+        `
+      } else {
+        botDiv.innerHTML = `
+          <img src="./assets/img/bot.jpg" class="msg-avatar" alt="bot">
+          <div class="msg-bubble">${item.bot_response}</div>
+        `
+      }
+
+      chatBody.appendChild(botDiv)
+
+      // Cập nhật context nếu có file
+      if (item.file_referenced) {
+        conversationContext.lastFile = item.file_referenced
+      }
+    })
+  }
+
+  chatBody.scrollTop = chatBody.scrollHeight
 }
 
 function toggleChat() {
@@ -13,6 +101,9 @@ function toggleChat() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Khởi tạo session trước
+  initializeSession()
+
   loadQA()
 
   document.getElementById("close-add-qna").onclick = toggleAddQnaModal
@@ -102,19 +193,19 @@ function sendMessage() {
 
   const chatBody = document.getElementById("chat-body")
 
-  // Lưu vào lịch sử cuộc trò chuyện
+  // Lưu vào lịch sử cuộc trò chuyện local
   conversationContext.conversationHistory.push({
     type: "user",
     message: message,
     timestamp: new Date(),
   })
 
-  //  Tạo khối chung cho user + bot
+  // Tạo khối chung cho user + bot
   const msgWrapper = document.createElement("div")
   msgWrapper.className = "message-wrapper"
   chatBody.appendChild(msgWrapper)
 
-  // 👉 Tạo và thêm tin nhắn người dùng
+  // Tạo và thêm tin nhắn người dùng
   const userDiv = document.createElement("div")
   userDiv.className = "msg-row user"
   userDiv.innerHTML = `
@@ -123,7 +214,7 @@ function sendMessage() {
   `
   msgWrapper.appendChild(userDiv)
 
-  // 👉 Tạo và thêm tin nhắn bot (đang trả lời)
+  // Tạo và thêm tin nhắn bot (đang trả lời)
   const botDiv = document.createElement("div")
   botDiv.className = "msg-row bot"
   botDiv.innerHTML = `
@@ -135,11 +226,11 @@ function sendMessage() {
   input.value = ""
   chatBody.scrollTop = chatBody.scrollHeight
 
-  // 👉 Gọi AI xử lý và thay nội dung
+  // Gọi AI xử lý và thay nội dung
   sendMessageToOllama(message).then((reply) => {
     chatBody.scrollTop = chatBody.scrollHeight
 
-    // Lưu phản hồi vào lịch sử
+    // Lưu phản hồi vào lịch sử local
     conversationContext.conversationHistory.push({
       type: "bot",
       message: reply,
@@ -167,33 +258,6 @@ function sendMessage() {
   })
 }
 
-function toggleAddQna() {
-  const box = document.getElementById("add-qna-box")
-  box.classList.toggle("hidden")
-}
-
-function previewQna() {
-  const questions = document
-    .getElementById("new-questions")
-    .value.trim()
-    .split("\n")
-    .filter((q) => q)
-  const answer = document.getElementById("new-answer").value.trim()
-  const fileInput = document.getElementById("new-file")
-  const file = fileInput.files[0]
-
-  if (questions.length === 0) {
-    alert("Vui lòng nhập ít nhất 1 câu hỏi")
-    return
-  }
-
-  const obj = { questions }
-  if (answer) obj.answer = answer
-  if (file) obj.answer_file = file.name
-
-  document.getElementById("qna-preview").textContent = JSON.stringify(obj, null, 2)
-}
-
 // Cải thiện hàm gửi tin nhắn với context tốt hơn
 function sendMessageToOllama(promptText) {
   const payload = {
@@ -202,8 +266,9 @@ function sendMessageToOllama(promptText) {
   }
 
   // Thêm context từ cuộc trò chuyện
-  if (conversationContext.lastFile) {
+  if (conversationContext.sessionId) {
     payload.context = {
+      sessionId: conversationContext.sessionId,
       lastFile: conversationContext.lastFile,
       lastSection: conversationContext.lastSection,
       conversationHistory: conversationContext.conversationHistory.slice(-5), // 5 tin nhắn gần nhất
@@ -214,38 +279,35 @@ function sendMessageToOllama(promptText) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    credentials: "include", // Quan trọng để duy trì session
   })
     .then((res) => res.json())
     .then((data) => {
-      // Trường hợp trả về file đính kèm
+      // Trường hợp trả về file đính kèm - sử dụng layout dọc
       if (data && data.answer_file) {
         const fileName = data.answer_file
         conversationContext.lastFile = fileName
 
-        const fileBlock = `
-    <div>
-      <div style="display: flex; align-items: center;">
-        <span style="font-size: 18px;">📄</span>
-        <span style="font-weight: bold; color: #495057;">Tệp đính kèm:</span>
-      </div>
-      <div style="margin-left: 4px;">
-        <a href="http://localhost:5000/files/${fileName}" target="_blank"
-          style="color: #7a1ea1; text-decoration: none; font-weight: 500;">
-          ${fileName}
-        </a>
-      </div>
-    </div>
-  `
+        // File attachment với layout dọc
+        const fileBlock = `<div style="display: flex; flex-direction: column; align-items: flex-start;">
+  <div style="display: flex; align-items: center; gap: 4px;">
+    <span style="font-size: 20px; color: #6c757d;">📄</span>
+    <span style="font-weight: bold; font-size: 14px; color: #495057;">Tệp đính kèm</span>
+  </div>
+  <a href="http://localhost:5000/files/${fileName}" target="_blank" style="color: #7a1ea1; text-decoration: none; font-size: 15px; font-weight: 500; word-break: break-all; line-height: 1.1; margin-top: -2px;" title="${fileName}">
+    ${fileName}
+  </a>
+</div>`
         return fileBlock
       }
 
-      // Trường hợp trả về nội dung
+      // Trường hợp trả về nội dung hoặc HTML formatted
       if (data && data.answer) {
         // Update context if the reply contains a file reference
-        if (data.answer.includes("Trích từ file")) {
-          const fileMatch = data.answer.match(/Trích từ file <u>([^<]+)<\/u>/)
+        if (data.answer.includes("file-content-wrapper") || data.answer.includes("Trích từ file")) {
+          const fileMatch = data.answer.match(/Trích từ file[:\s]*([^<\n]+)/)
           if (fileMatch && fileMatch[1]) {
-            conversationContext.lastFile = fileMatch[1]
+            conversationContext.lastFile = fileMatch[1].trim()
             console.log("Set context to file:", conversationContext.lastFile)
           }
         }
@@ -257,12 +319,45 @@ function sendMessageToOllama(promptText) {
     .catch((err) => "❌ Không tìm thấy kết quả phù hợp")
 }
 
-// ✅ Làm sạch emoji và ký tự ngoài tiếng Việt
-function cleanVietnameseResponse(text) {
-  return text.replace(/[^\p{L}\p{N}\p{P}\p{Zs}]/gu, "")
+// Thêm nút xóa lịch sử chat
+async function clearChatHistory() {
+  if (confirm("Bạn có chắc muốn xóa toàn bộ lịch sử chat?")) {
+    try {
+      // Gọi API để xóa database
+      const response = await fetch("http://localhost:5000/clear-chat", {
+        method: "POST",
+        credentials: "include",
+      })
+
+      const data = await response.json()
+
+      if (data.message === "success") {
+        // Reset conversation context
+        conversationContext.conversationHistory = []
+        conversationContext.lastFile = null
+        conversationContext.lastSection = null
+
+        // Reset UI
+        const chatBody = document.getElementById("chat-body")
+        chatBody.innerHTML = `
+          <div class="msg-row bot">
+            <img src="./assets/img/bot.jpg" class="msg-avatar" alt="bot">
+            <div class="msg-bubble">Xin chào! Tôi có thể giúp gì cho bạn?</div>
+          </div>
+        `
+
+        showToast("🗑️ Đã xóa lịch sử chat!")
+      } else {
+        showToast("❌ Lỗi khi xóa lịch sử chat!")
+      }
+    } catch (error) {
+      console.error("Error clearing chat:", error)
+      showToast("❌ Không thể xóa lịch sử chat!")
+    }
+  }
 }
 
-// ✅ Load bảng Q&A với nút "Thêm" trong mỗi dòng
+// Các hàm khác giữ nguyên...
 async function loadQA() {
   const res = await fetch("http://localhost:5000/qa-list")
   const qaList = await res.json()
@@ -325,17 +420,13 @@ async function editQA(index) {
   toggleAddQnaModal()
 }
 
-// ✅ Thêm chức năng toggle phần quản lý Q&A
 function toggleQASection(forceShow = null) {
   const wrapper = document.getElementById("qa-wrapper")
   const toggleBtn = document.getElementById("toggle-qa-btn")
 
-  // Tự xác định trạng thái nếu chưa truyền vào
   const willShow = forceShow !== null ? forceShow : wrapper.classList.contains("hidden")
 
-  // Cập nhật hiển thị
   wrapper.classList.toggle("hidden", !willShow)
-  // ✅ Ẩn/hiện nút và giữ căn giữa
   if (willShow) {
     toggleBtn.style.display = "none"
   } else {
@@ -344,17 +435,15 @@ function toggleQASection(forceShow = null) {
   }
 }
 
-// ✅ Toggle hiển thị form Thêm Q&A
 function toggleAddQnaModal() {
   const modal = document.getElementById("add-qna-modal")
   modal.classList.toggle("hidden")
 }
 
-// ✅ Cho phép bấm Enter để gửi trong ô nhập chatbot
 document.getElementById("user-input").addEventListener("keypress", (e) => {
   if (e.key === "Enter") {
-    e.preventDefault() // Ngăn xuống dòng nếu dùng textarea
-    sendMessage() // Gọi hàm gửi tin
+    e.preventDefault()
+    sendMessage()
   }
 })
 
